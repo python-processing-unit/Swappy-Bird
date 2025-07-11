@@ -4,6 +4,7 @@ set "ROOTDIR=%~dp0"
 REM Remove trailing backslash if present
 if "%ROOTDIR:~-1%"=="\" set "ROOTDIR=%ROOTDIR:~0,-1%"
 pip install pygame
+pip install pyinstaller
 REM Change to EXE directory
 cd "%ROOTDIR%\exe"
 
