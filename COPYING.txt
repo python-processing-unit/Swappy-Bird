@@ -1,0 +1,4 @@
+This game is released under the Unlicense, and is derived from another game under the MIT license.
+The background music is used under the CC-BY 3.0 license.
+Copyright for the original code is in MIT.license.
+Copyright for bgm: Background Music by Cal McEachern licensed CC-BY 3.0 - opengameart.org/content/the-hero-returns-boss-battle-loop
