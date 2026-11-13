@@ -5,5 +5,7 @@ version = "0.0.0"
 require-python = "==3.13.*"
 dependencies = [
   "pygame-ce>=2.0.0",
-  "pywin32==312"
+  "pywin32==312",
+  "ruff>=0.17.0"
 ]
+
