@@ -1,0 +1,9 @@
+[project]
+name = "swappy_bird"
+version = "0.0.0"
+
+require-python = "==3.13.*"
+dependencies = [
+  "pygame-ce>=2.0.0",
+  "pywin32==312"
+]
