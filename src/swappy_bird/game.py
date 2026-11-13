@@ -8,23 +8,18 @@ import pygame
 import win32com.client
 from pygame.locals import *
 
-_devnull_f = open(os.devnull, "w")  # noqa
-sys.stdout = _devnull_f
-sys.stderr = _devnull_f
+_base_path: str = (
+    sys._MEIPASS
+    if hasattr(sys, "_MEIPASS")
+    else os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+)
 
 
 def resource_path(relative_path: str) -> str:
-    if hasattr(sys, "_MEIPASS"):
-        base_path = sys._MEIPASS
-    else:
-        path = os.path.abspath(sys.argv[0])
-        base_path = path.replace(os.path.basename(path), "")
-    return os.path.join(base_path, relative_path)
+    return os.path.join(_base_path, relative_path)
 
 
-_path: str = os.path.abspath(sys.argv[0])
-_path = _path.replace(os.path.basename(_path), "")
-_pickle_file: str = os.path.join(_path, "SAVE.pkl")
+_pickle_file: str = os.path.join(_base_path, "SAVE.pkl")
 
 
 def check_file(filepath: str) -> bool:
@@ -467,8 +462,3 @@ class Game:
 
     def _calculate_time_scale(self, dt: float) -> float:
         return dt * max(self.previous_logic_rate, 1)
-
-
-pygame.init()
-while True:
-    Game().run()

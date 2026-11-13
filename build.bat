@@ -12,7 +12,8 @@ cd "%ROOTDIR%"
 REM Build with pyinstaller, dynamically referencing the root directory
 pyinstaller --onefile --windowed --icon "%ROOTDIR%\assets\sprites\logo.png" ^
   --add-data "%ROOTDIR%\assets;assets" ^
-  "%ROOTDIR%\Swappy Bird.py"
+  --paths "%ROOTDIR%\src" --name "Swappy Bird" ^
+  "%ROOTDIR%\src\swappy_bird\__main__.py"
 
 REM Clean up build artifacts
 rmdir /s /q "%ROOTDIR%\build"
