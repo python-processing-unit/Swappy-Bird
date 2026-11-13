@@ -58,13 +58,13 @@ class Bird(pygame.sprite.Sprite):
         self.game = game
         self.images = [
             pygame.image.load(
-                resource_path("assets/sprites/bluebird-upflap.png")
+                resource_path("assets/sprites/bird-upflap.png")
             ).convert_alpha(),
             pygame.image.load(
-                resource_path("assets/sprites/bluebird-midflap.png")
+                resource_path("assets/sprites/bird-midflap.png")
             ).convert_alpha(),
             pygame.image.load(
-                resource_path("assets/sprites/bluebird-downflap.png")
+                resource_path("assets/sprites/bird-downflap.png")
             ).convert_alpha(),
         ]
         self.speed: float = float(game.speed)
@@ -133,7 +133,7 @@ class Game:
         self.target_fps: int = self._detect_refresh_rate()
         self.previous_logic_rate: float = float(max(self.game_speed, 1))
         self.background = pygame.image.load(
-            resource_path("assets/sprites/background-day.png")
+            resource_path("assets/sprites/background.png")
         )
         self.background = pygame.transform.scale(
             self.background, (self.screen_width, self.screen_height)
@@ -166,7 +166,7 @@ class Game:
             pygame.sprite.Sprite.__init__(self)
             self.game = game
             self.image = pygame.image.load(
-                resource_path("assets/sprites/pipe-green.png")
+                resource_path("assets/sprites/books.png")
             ).convert_alpha()
             self.image = pygame.transform.scale(
                 self.image, (game.pipe_width, game.pipe_height)
@@ -190,7 +190,7 @@ class Game:
             pygame.sprite.Sprite.__init__(self)
             self.game = game
             self.image = pygame.image.load(
-                resource_path("assets/sprites/base.png")
+                resource_path("assets/sprites/floor.png")
             ).convert_alpha()
             self.image = pygame.transform.scale(
                 self.image, (game.ground_width, game.ground_height)
