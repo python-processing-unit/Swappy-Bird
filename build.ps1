@@ -3,7 +3,7 @@ Set-Location $PSScriptRoot
 
 uv sync
 
-pyinstaller `
+uv run pyinstaller `
   --onefile --windowed --icon `
   ".\assets\sprites\logo.png" `
   --add-data ".\assets;assets" `
