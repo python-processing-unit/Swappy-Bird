@@ -252,7 +252,7 @@ class Game:
         )
 
     def _recycle_ground(self, xpos: int) -> None:
-        ground = next(iter(self.ground_group))
+        ground = min(self.ground_group, key=lambda sprite: sprite.rect.left)
         self.ground_group.remove(ground)
         ground.set_position(xpos, self.screen_height - self.ground_height)
         self.ground_group.add(ground)
@@ -297,7 +297,7 @@ class Game:
         return paused
 
     def update(self, time_scale: float) -> bool:
-        ground = next(iter(self.ground_group))
+        ground = min(self.ground_group, key=lambda sprite: sprite.rect.left)
         if self.is_off_screen(ground):
             next_x = max(
                 item.rect.right for item in self.ground_group if item is not ground
@@ -397,7 +397,7 @@ class Game:
             if flip_y:
                 begin_rect.top = self.screen_height - begin_rect.bottom
             self.screen.blit(begin_image, begin_rect)
-            ground = next(iter(self.ground_group))
+            ground = min(self.ground_group, key=lambda sprite: sprite.rect.left)
             if self.is_off_screen(ground):
                 self._recycle_ground(self.ground_width - 20)
             self.bird.begin(time_scale)
