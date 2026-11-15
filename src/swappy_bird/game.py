@@ -232,7 +232,7 @@ class Game:
         if "up" in logical and (not begin or self.can_start):
             self.bird.bump()
             self.wing_sound.play()
-        if "down" in logical:
+        if "down" in logical and begin:
             self.game_speed, self.pipe_gap = 35, 120
         if begin or "pause" not in logical:
             return paused
