@@ -5,8 +5,9 @@ from swappy_bird import Game
 
 def main() -> None:
     pygame.init()
-    while True:
-        Game().run()
+    game = Game()
+    while game.run():
+        game = Game()
 
 
 if __name__ == "__main__":

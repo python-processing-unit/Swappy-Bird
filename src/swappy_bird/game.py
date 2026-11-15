@@ -452,13 +452,13 @@ class Game:
             sys.exit()
         return True
 
-    def run(self) -> None:
+    def run(self) -> bool:
         begin, paused = True, False
         while True:
             dt = self.clock.tick(10 if paused else self.target_fps) / 1000
             logical = self.handle_events(begin)
             if self._quit_requested(logical):
-                return
+                return False
             if paused:
                 paused = self.process_keychange(logical, begin=False, paused=True)
                 continue
@@ -479,7 +479,7 @@ class Game:
             self.draw(begin=False, time_scale=time_scale)
             self.previous_logic_rate = float(max(self.game_speed, 1))
             if game_over:
-                return
+                return True
 
     def _detect_refresh_rate(self) -> int:
         try:
