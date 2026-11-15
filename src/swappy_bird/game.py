@@ -406,23 +406,22 @@ class Game:
         if not begin:
             self._draw_group(self.pipe_group, flip_x, flip_y)
         self._draw_group(self.ground_group, flip_x, flip_y)
-        if not begin:
-            self._draw_score(
-                "Score",
-                self.score,
-                (255, 255, 0) if self.score > self.old_high_score else (255, 255, 255),
-                10,
-                flip_x,
-                flip_y,
-            )
-            self._draw_score(
-                "High Score",
-                self.high_score,
-                (255, 255, 255),
-                825,
-                flip_x,
-                flip_y,
-            )
+        self._draw_score(
+            "Score",
+            self.score,
+            (255, 255, 0) if self.score > self.old_high_score else (255, 255, 255),
+            10,
+            flip_x,
+            flip_y,
+        )
+        self._draw_score(
+            "High Score",
+            self.high_score,
+            (255, 255, 255),
+            825,
+            flip_x,
+            flip_y,
+        )
         pygame.display.update()
 
     def _quit_requested(self, logical: set[str]) -> bool:
