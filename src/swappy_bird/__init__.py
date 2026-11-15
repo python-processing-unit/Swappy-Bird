@@ -1,3 +1,5 @@
+"""Public package interface for Swappy Bird."""
+
 from .game import (
     Bird,
     Game,

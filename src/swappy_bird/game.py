@@ -1,8 +1,10 @@
-import os
-import pickle
+"""Game implementation and reusable drawing helpers."""
+
+import pickletools
 import random
 import sys
 from functools import cache, lru_cache
+from pathlib import Path
 
 import pygame
 import win32com.client
@@ -21,18 +23,21 @@ from pygame.locals import (
     K_x,
 )
 
-_base_path: str = getattr(
-    sys,
-    "_MEIPASS",
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")),
-)
+_base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
 _save_path = (
-    os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else _base_path
+    Path(sys.executable).parent if getattr(sys, "frozen", False) else _base_path
 )
-_pickle_file = os.path.join(_save_path, "SAVE.pkl")
+_pickle_file = _save_path / "SAVE.pkl"
 _scrolling_assets: dict[
     tuple[str, tuple[int, int], bool], tuple[pygame.Surface, pygame.mask.Mask]
 ] = {}
+_MAX_GAME_SPEED = 36
+_SPEED_UP_INTERVAL = 7
+_TOP_BOUNDARY = -5
+_SCORE_TENS_LIMIT = 10
+_SCORE_HUNDREDS_LIMIT = 100
+_INVALID_LEGACY_SCORE = "Invalid legacy high-score data"
+_UNSUPPORTED_LEGACY_SCORE = "Unsupported legacy high-score data"
 
 
 @cache
@@ -42,37 +47,39 @@ def _font(size: int) -> pygame.font.Font:
 
 @lru_cache(maxsize=256)
 def _render_text(text: str, size: int, color: tuple[int, int, int]) -> pygame.Surface:
-    return _font(size).render(text, True, color)
+    return _font(size).render(text, antialias=True, color=color)
 
 
 @lru_cache(maxsize=256)
-def _flip_surface(
-    surface: pygame.Surface, flip_x: bool, flip_y: bool
-) -> pygame.Surface:
+def _flip_surface(surface: pygame.Surface, flip: tuple[bool, bool]) -> pygame.Surface:
+    flip_x, flip_y = flip
     if not flip_x and not flip_y:
         return surface
-    return pygame.transform.flip(surface, flip_x, flip_y)
+    return pygame.transform.flip(surface, *flip)
 
 
 def resource_path(relative_path: str) -> str:
-    return os.path.join(_base_path, relative_path)
+    """Return the absolute path to a bundled resource."""
+    return str(_base_path / relative_path)
 
 
 def check_file(filepath: str) -> bool:
-    return os.path.isfile(filepath)
+    """Return whether a file exists at the given path."""
+    return Path(filepath).is_file()
 
 
 def draw_text(
     screen: pygame.Surface,
     text: str,
-    size: int,
-    color: tuple[int, int, int],
-    x: int,
-    y: int,
-    flip_x: bool = False,
-    flip_y: bool = False,
+    style: tuple[int, tuple[int, int, int]],
+    position: tuple[int, int],
+    flip: tuple[bool, bool] = (False, False),
 ) -> None:
-    surface = _flip_surface(_render_text(text, size, color), flip_x, flip_y)
+    """Draw text at a position, optionally mirrored across either axis."""
+    size, color = style
+    x, y = position
+    flip_x, flip_y = flip
+    surface = _flip_surface(_render_text(text, size, color), flip)
     if flip_x:
         x = screen.get_width() - x - surface.get_width()
     if flip_y:
@@ -81,19 +88,52 @@ def draw_text(
 
 
 def load_high_score() -> int:
-    if not check_file(_pickle_file):
+    """Load the saved high score, returning zero when no score exists."""
+    if not _pickle_file.is_file():
         return 0
-    with open(_pickle_file, "rb") as file:
-        return pickle.load(file)
+    data = _pickle_file.read_bytes()
+    try:
+        return int(data)
+    except ValueError:
+        return _read_legacy_pickled_score(data)
 
 
 def save_high_score(score: int) -> None:
-    with open(_pickle_file, "wb") as file:
-        pickle.dump(score, file)
+    """Save the high score as plain text."""
+    _pickle_file.write_text(str(score), encoding="ascii")
+
+
+def _read_legacy_pickled_score(data: bytes) -> int:
+    value: int | None = None
+    for opcode, argument, position in pickletools.genops(data):
+        if opcode.name in {"PROTO", "FRAME"}:
+            continue
+        if opcode.name in {
+            "BININT",
+            "BININT1",
+            "BININT2",
+            "INT",
+            "LONG",
+            "LONG1",
+            "LONG4",
+        }:
+            if value is not None or type(argument) is not int:
+                raise ValueError(_INVALID_LEGACY_SCORE)
+            value = argument
+        elif opcode.name == "STOP":
+            if value is None or position + 1 != len(data):
+                raise ValueError(_INVALID_LEGACY_SCORE)
+            return value
+        else:
+            raise ValueError(_UNSUPPORTED_LEGACY_SCORE)
+    raise ValueError(_INVALID_LEGACY_SCORE)
 
 
 class Bird(pygame.sprite.Sprite):
+    """Animated player character controlled by the player."""
+
     def __init__(self, game: "Game") -> None:
+        """Create the player bird and its animation frames."""
         super().__init__()
         self.game = game
         self.images = [
@@ -119,6 +159,7 @@ class Bird(pygame.sprite.Sprite):
         self.animation_progress = 0.0
 
     def animate(self, time_scale: float) -> None:
+        """Advance the bird's animation by the given time scale."""
         self.animation_progress += time_scale
         if self.animation_progress >= 1:
             steps = int(self.animation_progress)
@@ -128,21 +169,26 @@ class Bird(pygame.sprite.Sprite):
             self.mask = self.masks[self.current_image]
 
     def update(self, time_scale: float) -> None:
+        """Advance the bird animation and vertical movement."""
         self.animate(time_scale)
         self.speed += self.game.gravity * time_scale
         self.position_y += self.speed * time_scale
         self.rect.y = int(self.position_y)
 
     def bump(self) -> None:
+        """Apply the upward impulse caused by a flap."""
         self.speed = -self.game.speed
 
     def begin(self, time_scale: float) -> None:
+        """Animate the bird while waiting to start the game."""
         self.animate(time_scale)
 
     def flash(self) -> None:
+        """Show the bird's score flash briefly."""
         self.flash_until = pygame.time.get_ticks() + 30
 
     def draw_image(self) -> pygame.Surface:
+        """Return the bird's current visible surface."""
         if pygame.time.get_ticks() < self.flash_until:
             return self.flash_images[self.current_image]
         return self.image
@@ -154,8 +200,8 @@ class _ScrollingSprite(pygame.sprite.Sprite):
         game: "Game",
         image_path: str,
         size: tuple[int, int],
-        xpos: int,
-        ypos: int,
+        position: tuple[int, int],
+        *,
         inverted: bool = False,
     ) -> None:
         super().__init__()
@@ -166,24 +212,29 @@ class _ScrollingSprite(pygame.sprite.Sprite):
             image = pygame.image.load(resource_path(image_path)).convert_alpha()
             scaled_image = pygame.transform.scale(image, size)
             if inverted:
-                scaled_image = pygame.transform.flip(scaled_image, False, True)
+                scaled_image = pygame.transform.flip(scaled_image, *(False, True))
             asset = (scaled_image, pygame.mask.from_surface(scaled_image))
             _scrolling_assets[asset_key] = asset
         self.image, self.mask = asset
-        self.rect = self.image.get_rect(topleft=(xpos, ypos))
-        self.position_x = float(xpos)
+        self.rect = self.image.get_rect(topleft=position)
+        self.position_x = float(position[0])
 
     def update(self, time_scale: float) -> None:
+        """Move this scrolling sprite according to the game speed."""
         self.position_x -= self.game.game_speed * time_scale
         self.rect.x = int(self.position_x)
 
     def set_position(self, xpos: int, ypos: int) -> None:
+        """Move this sprite to the given coordinates."""
         self.position_x = float(xpos)
         self.rect.topleft = (xpos, ypos)
 
 
 class Game:
+    """Owns the game state, event loop, and rendering."""
+
     def __init__(self) -> None:
+        """Initialize game state, assets, audio, and the display."""
         self.screen_width, self.screen_height = 1000, 600
         self.speed, self.gravity, self.game_speed = 20, 2.5, 15
         self.ground_width, self.ground_height = 2 * self.screen_width, 100
@@ -236,7 +287,12 @@ class Game:
         self.clock = pygame.time.Clock()
 
     class Pipe(_ScrollingSprite):
-        def __init__(self, game: "Game", inverted: bool, xpos: int, ysize: int) -> None:
+        """Scrolling pipe sprite used to form an obstacle pair."""
+
+        def __init__(
+            self, game: "Game", xpos: int, ysize: int, *, inverted: bool
+        ) -> None:
+            """Create a pipe at the requested horizontal position."""
             ypos = (
                 -(game.pipe_height - ysize) if inverted else game.screen_height - ysize
             )
@@ -244,22 +300,24 @@ class Game:
                 game,
                 "assets/sprites/books.png",
                 (game.pipe_width, game.pipe_height),
-                xpos,
-                ypos,
-                inverted,
+                (xpos, ypos),
+                inverted=inverted,
             )
 
     class Ground(_ScrollingSprite):
+        """Scrolling ground sprite at the bottom of the screen."""
+
         def __init__(self, game: "Game", xpos: int) -> None:
+            """Create a ground segment at the requested horizontal position."""
             super().__init__(
                 game,
                 "assets/sprites/floor.png",
                 (game.ground_width, game.ground_height),
-                xpos,
-                game.screen_height - game.ground_height,
+                (xpos, game.screen_height - game.ground_height),
             )
 
     def is_off_screen(self, sprite: pygame.sprite.Sprite) -> bool:
+        """Return whether a sprite has moved fully past the left edge."""
         return sprite.rect.left < -sprite.rect.width
 
     def _screen_flip_state(self) -> tuple[bool, bool]:
@@ -271,10 +329,16 @@ class Game:
         )
 
     def get_random_pipes(self, xpos: int) -> tuple[Pipe, Pipe]:
-        size = random.randint(100, 300)
+        """Create a pair of pipes with a randomized opening."""
+        size = random.randint(100, 300)  # noqa: S311
         return (
-            self.Pipe(self, False, xpos, size),
-            self.Pipe(self, True, xpos, self.screen_height - size - self.pipe_gap),
+            self.Pipe(self, xpos, size, inverted=False),
+            self.Pipe(
+                self,
+                xpos,
+                self.screen_height - size - self.pipe_gap,
+                inverted=True,
+            ),
         )
 
     def _recycle_ground(self, xpos: int) -> None:
@@ -283,7 +347,8 @@ class Game:
         ground.set_position(xpos, self.screen_height - self.ground_height)
         self.ground_group.add(ground)
 
-    def handle_events(self, begin: bool) -> set[str]:
+    def handle_events(self) -> set[str]:
+        """Translate pygame events into logical game actions."""
         logical: set[str] = set()
         for event in pygame.event.get():
             if event.type == QUIT:
@@ -301,7 +366,10 @@ class Game:
                     logical.add("pause")
         return logical
 
-    def process_keychange(self, logical: set[str], begin: bool, paused: bool) -> bool:
+    def process_keychange(
+        self, logical: set[str], *, begin: bool, paused: bool
+    ) -> bool:
+        """Apply logical key actions and return the resulting pause state."""
         if "up" in logical and (not begin or self.can_start):
             self.bird.bump()
             self.wing_sound.play()
@@ -323,6 +391,7 @@ class Game:
         return paused
 
     def update(self, time_scale: float) -> bool:
+        """Advance game objects and return whether the bird collided."""
         ground = min(self.ground_group, key=lambda sprite: sprite.rect.left)
         if self.is_off_screen(ground):
             next_x = max(
@@ -335,9 +404,9 @@ class Game:
             self.score += 1
             self.point_sound.play()
             self.bird.flash()
-            if self.game_speed < 36:
+            if self.game_speed < _MAX_GAME_SPEED:
                 self.speed_track += 1
-                if self.speed_track == 7:
+                if self.speed_track == _SPEED_UP_INTERVAL:
                     self.speed_track = 0
                     self.game_speed += 1
                     self.pipe_gap -= 2
@@ -346,7 +415,7 @@ class Game:
             self.pipe_pairs.append(self.pipe_pairs.pop(0))
             self.pipe_scored.append(self.pipe_scored.pop(0))
             self.pipe_scored[-1] = False
-            size = random.randint(100, 300)
+            size = random.randint(100, 300)  # noqa: S311
             xpos = self.screen_width * 2
             pipe_pair[0].set_position(xpos, self.screen_height - size)
             pipe_pair[1].set_position(
@@ -365,7 +434,7 @@ class Game:
                 pygame.sprite.collide_mask(self.bird, sprite)
                 for sprite in self.pipe_group
             )
-            or self.bird.rect.top <= -5
+            or self.bird.rect.top <= _TOP_BOUNDARY
         )
         if not collision:
             return False
@@ -392,34 +461,40 @@ class Game:
         value: int,
         color: tuple[int, int, int],
         x: int,
-        flip_x: bool,
-        flip_y: bool,
+        flip: tuple[bool, bool],
     ) -> None:
-        if value < 10:
+        if value < _SCORE_TENS_LIMIT:
             value_text = f"00{value}"
-        elif value < 100:
+        elif value < _SCORE_HUNDREDS_LIMIT:
             value_text = f"0{value}"
         else:
             value_text = str(value)
         draw_text(
-            self.screen, f"{label}: {value_text}", 32, color, x, 10, flip_x, flip_y
+            self.screen,
+            f"{label}: {value_text}",
+            (32, color),
+            (x, 10),
+            flip,
         )
 
     def _draw_group(
-        self, group: pygame.sprite.AbstractGroup, flip_x: bool, flip_y: bool
+        self, group: pygame.sprite.AbstractGroup, flip: tuple[bool, bool]
     ) -> None:
+        flip_x, flip_y = flip
         for sprite in group:
             image = sprite.draw_image() if isinstance(sprite, Bird) else sprite.image
-            image = _flip_surface(image, flip_x, flip_y)
+            image = _flip_surface(image, flip)
             x = self.screen_width - sprite.rect.right if flip_x else sprite.rect.left
             y = self.screen_height - sprite.rect.bottom if flip_y else sprite.rect.top
             self.screen.blit(image, (x, y))
 
-    def draw(self, begin: bool, time_scale: float) -> None:
+    def draw(self, time_scale: float, *, begin: bool) -> None:
+        """Draw the current frame to the display."""
         flip_x, flip_y = self._screen_flip_state() if not begin else (False, False)
-        self.screen.blit(_flip_surface(self.background, flip_x, flip_y), (0, 0))
+        flip = (flip_x, flip_y)
+        self.screen.blit(_flip_surface(self.background, flip), (0, 0))
         if begin:
-            begin_image = _flip_surface(self.begin_image, flip_x, flip_y)
+            begin_image = _flip_surface(self.begin_image, flip)
             begin_rect = self.begin_image.get_rect(topleft=(120, 150))
             if flip_x:
                 begin_rect.left = self.screen_width - begin_rect.right
@@ -431,25 +506,23 @@ class Game:
                 self._recycle_ground(self.ground_width - 20)
             self.bird.begin(time_scale)
             self.ground_group.update(time_scale)
-        self._draw_group(self.bird_group, flip_x, flip_y)
+        self._draw_group(self.bird_group, flip)
         if not begin:
-            self._draw_group(self.pipe_group, flip_x, flip_y)
-        self._draw_group(self.ground_group, flip_x, flip_y)
+            self._draw_group(self.pipe_group, flip)
+        self._draw_group(self.ground_group, flip)
         self._draw_score(
             "Score",
             self.score,
             (255, 255, 0) if self.score > self.old_high_score else (255, 255, 255),
             10,
-            flip_x,
-            flip_y,
+            (flip_x, flip_y),
         )
         self._draw_score(
             "High Score",
             self.high_score,
             (255, 255, 255),
             825,
-            flip_x,
-            flip_y,
+            (flip_x, flip_y),
         )
         pygame.display.update()
 
@@ -462,19 +535,20 @@ class Game:
         return True
 
     def run(self) -> bool:
+        """Run the game loop and return whether a game ended."""
         begin, paused = True, False
         while True:
             dt = self.clock.tick(10 if paused else self.target_fps) / 1000
-            logical = self.handle_events(begin)
+            logical = self.handle_events()
             if self._quit_requested(logical):
                 return False
             if paused:
                 paused = self.process_keychange(logical, begin=False, paused=True)
                 continue
-            paused = self.process_keychange(logical, begin, paused)
+            paused = self.process_keychange(logical, begin=begin, paused=paused)
             if begin:
                 begin = not ("up" in logical and self.can_start)
-                self.draw(begin, self._calculate_time_scale(dt))
+                self.draw(self._calculate_time_scale(dt), begin=begin)
                 self.previous_logic_rate = float(max(self.game_speed, 1))
                 if not begin:
                     pygame.mixer.music.load(self.bg_music)
@@ -485,7 +559,7 @@ class Game:
                 continue
             time_scale = self._calculate_time_scale(dt)
             game_over = self.update(time_scale)
-            self.draw(begin=False, time_scale=time_scale)
+            self.draw(time_scale, begin=False)
             self.previous_logic_rate = float(max(self.game_speed, 1))
             if game_over:
                 return True

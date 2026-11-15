@@ -22,3 +22,24 @@ dev = [
 [project.scripts]
 swappy-bird = "swappy_bird.__main__:main"
 
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "COM812",
+  "COM819",
+  "CPY001",
+  "D203",
+  "D206",
+  "D212",
+  "D300",
+  "E111",
+  "E114",
+  "E117",
+  "ISC002",
+  "Q000",
+  "Q001",
+  "Q002",
+  "Q003",
+  "Q004",
+  "W191",
+]
