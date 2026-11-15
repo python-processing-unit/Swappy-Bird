@@ -225,6 +225,7 @@ class Game:
             self.get_random_pipes(self.screen_width * i + 800) for i in range(2)
         ]
         self.pipe_scored = [False, False]
+        self.pipe_despawn_count = 0
         self.pipe_group = pygame.sprite.Group(
             *(pipe for pair in self.pipe_pairs for pipe in pair)
         )
@@ -260,6 +261,14 @@ class Game:
 
     def is_off_screen(self, sprite: pygame.sprite.Sprite) -> bool:
         return sprite.rect.left < -sprite.rect.width
+
+    def _screen_flip_state(self) -> tuple[bool, bool]:
+        if self.pipe_despawn_count == 0:
+            return False, False
+        return (
+            self.pipe_despawn_count // 7 % 2 != 0,
+            self.pipe_despawn_count // 14 % 2 != 0,
+        )
 
     def get_random_pipes(self, xpos: int) -> tuple[Pipe, Pipe]:
         size = random.randint(100, 300)
@@ -333,6 +342,7 @@ class Game:
                     self.game_speed += 1
                     self.pipe_gap -= 2
         if self.is_off_screen(pipe_pair[0]):
+            self.pipe_despawn_count += 1
             self.pipe_pairs.append(self.pipe_pairs.pop(0))
             self.pipe_scored.append(self.pipe_scored.pop(0))
             self.pipe_scored[-1] = False
@@ -364,10 +374,7 @@ class Game:
         save_high_score(self.high_score)
         text = _render_text("You are warned", 72, (255, 255, 255))
         rect = text.get_rect(center=(self.screen_width // 2, self.screen_height // 2))
-        flip_x, flip_y = (
-            self.score > 0 and self.score // 7 % 2 != 0,
-            (self.score > 0 and self.score // 14 % 2 != 0),
-        )
+        flip_x, flip_y = self._screen_flip_state()
         if flip_x or flip_y:
             text = pygame.transform.flip(text, flip_x, flip_y)
         self.screen.blit(text, rect)
@@ -409,8 +416,7 @@ class Game:
             self.screen.blit(image, (x, y))
 
     def draw(self, begin: bool, time_scale: float) -> None:
-        flip_x = not begin and self.score > 0 and self.score // 7 % 2 != 0
-        flip_y = not begin and self.score > 0 and self.score // 14 % 2 != 0
+        flip_x, flip_y = self._screen_flip_state() if not begin else (False, False)
         self.screen.blit(_flip_surface(self.background, flip_x, flip_y), (0, 0))
         if begin:
             begin_image = _flip_surface(self.begin_image, flip_x, flip_y)
