@@ -26,7 +26,10 @@ _base_path: str = getattr(
     "_MEIPASS",
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")),
 )
-_pickle_file = os.path.join(_base_path, "SAVE.pkl")
+_save_path = (
+    os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else _base_path
+)
+_pickle_file = os.path.join(_save_path, "SAVE.pkl")
 _scrolling_assets: dict[
     tuple[str, tuple[int, int], bool], tuple[pygame.Surface, pygame.mask.Mask]
 ] = {}
