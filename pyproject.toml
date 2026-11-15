@@ -16,7 +16,8 @@ dev = [
   "pre-commit>=4.3.0",
   "ruff>=0.17.0",
   "pyinstaller>=6.0.0",
-  "pillow>=13.0.0"
+  "pillow>=13.0.0",
+  "ty>=0.0.104",
 ]
 
 [project.scripts]
@@ -43,3 +44,6 @@ ignore = [
   "Q004",
   "W191",
 ]
+
+[tool.ty.rules]
+all = "error"

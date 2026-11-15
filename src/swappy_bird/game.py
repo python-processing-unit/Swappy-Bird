@@ -5,6 +5,7 @@ import random
 import sys
 from functools import cache, lru_cache
 from pathlib import Path
+from typing import TypeVar, override
 
 import pygame
 import win32com.client
@@ -38,6 +39,9 @@ _SCORE_TENS_LIMIT = 10
 _SCORE_HUNDREDS_LIMIT = 100
 _INVALID_LEGACY_SCORE = "Invalid legacy high-score data"
 _UNSUPPORTED_LEGACY_SCORE = "Unsupported legacy high-score data"
+_SPRITE_IMAGE_NOT_INITIALIZED = "Sprite image has not been initialized"
+_SPRITE_RECT_NOT_INITIALIZED = "Sprite rect has not been initialized"
+_SpriteT = TypeVar("_SpriteT", bound=pygame.sprite.Sprite)
 
 
 @cache
@@ -121,7 +125,7 @@ def _read_legacy_pickled_score(data: bytes) -> int:
                 raise ValueError(_INVALID_LEGACY_SCORE)
             value = argument
         elif opcode.name == "STOP":
-            if value is None or position + 1 != len(data):
+            if value is None or position is None or position + 1 != len(data):
                 raise ValueError(_INVALID_LEGACY_SCORE)
             return value
         else:
@@ -150,12 +154,12 @@ class Bird(pygame.sprite.Sprite):
         self.flash_until = 0
         self.speed: float = float(game.speed)
         self.current_image = 0
-        self.image = self.images[0]
+        image = self.images[0]
+        self.image = image
         self.mask = self.masks[0]
-        self.rect = self.image.get_rect(
-            topleft=(game.screen_width // 6, game.screen_height // 2)
-        )
-        self.position_y = float(self.rect.y)
+        rect = image.get_rect(topleft=(game.screen_width // 6, game.screen_height // 2))
+        self.rect = rect
+        self.position_y = float(rect.y)
         self.animation_progress = 0.0
 
     def animate(self, time_scale: float) -> None:
@@ -168,12 +172,13 @@ class Bird(pygame.sprite.Sprite):
             self.image = self.images[self.current_image]
             self.mask = self.masks[self.current_image]
 
+    @override
     def update(self, time_scale: float) -> None:
         """Advance the bird animation and vertical movement."""
         self.animate(time_scale)
         self.speed += self.game.gravity * time_scale
         self.position_y += self.speed * time_scale
-        self.rect.y = int(self.position_y)
+        _sprite_rect(self).y = int(self.position_y)
 
     def bump(self) -> None:
         """Apply the upward impulse caused by a flap."""
@@ -191,6 +196,8 @@ class Bird(pygame.sprite.Sprite):
         """Return the bird's current visible surface."""
         if pygame.time.get_ticks() < self.flash_until:
             return self.flash_images[self.current_image]
+        if self.image is None:
+            raise RuntimeError(_SPRITE_IMAGE_NOT_INITIALIZED)
         return self.image
 
 
@@ -215,19 +222,30 @@ class _ScrollingSprite(pygame.sprite.Sprite):
                 scaled_image = pygame.transform.flip(scaled_image, *(False, True))
             asset = (scaled_image, pygame.mask.from_surface(scaled_image))
             _scrolling_assets[asset_key] = asset
-        self.image, self.mask = asset
-        self.rect = self.image.get_rect(topleft=position)
+        image, self.mask = asset
+        self.image = image
+        self.rect = image.get_rect(topleft=position)
         self.position_x = float(position[0])
 
+    @override
     def update(self, time_scale: float) -> None:
         """Move this scrolling sprite according to the game speed."""
         self.position_x -= self.game.game_speed * time_scale
-        self.rect.x = int(self.position_x)
+        _sprite_rect(self).x = int(self.position_x)
 
     def set_position(self, xpos: int, ypos: int) -> None:
         """Move this sprite to the given coordinates."""
         self.position_x = float(xpos)
-        self.rect.topleft = (xpos, ypos)
+        _sprite_rect(self).topleft = (xpos, ypos)
+
+
+def _sprite_rect(sprite: pygame.sprite.Sprite) -> pygame.Rect:
+    rect = sprite.rect
+    if rect is None:
+        raise RuntimeError(_SPRITE_RECT_NOT_INITIALIZED)
+    if not isinstance(rect, pygame.Rect):
+        raise TypeError
+    return rect
 
 
 class Game:
@@ -318,7 +336,8 @@ class Game:
 
     def is_off_screen(self, sprite: pygame.sprite.Sprite) -> bool:
         """Return whether a sprite has moved fully past the left edge."""
-        return sprite.rect.left < -sprite.rect.width
+        rect = _sprite_rect(sprite)
+        return rect.left < -rect.width
 
     def _screen_flip_state(self) -> tuple[bool, bool]:
         if self.pipe_despawn_count == 0:
@@ -342,7 +361,7 @@ class Game:
         )
 
     def _recycle_ground(self, xpos: int) -> None:
-        ground = min(self.ground_group, key=lambda sprite: sprite.rect.left)
+        ground = min(self.ground_group, key=lambda sprite: _sprite_rect(sprite).left)
         self.ground_group.remove(ground)
         ground.set_position(xpos, self.screen_height - self.ground_height)
         self.ground_group.add(ground)
@@ -392,14 +411,19 @@ class Game:
 
     def update(self, time_scale: float) -> bool:
         """Advance game objects and return whether the bird collided."""
-        ground = min(self.ground_group, key=lambda sprite: sprite.rect.left)
+        ground = min(self.ground_group, key=lambda sprite: _sprite_rect(sprite).left)
         if self.is_off_screen(ground):
             next_x = max(
-                item.rect.right for item in self.ground_group if item is not ground
+                _sprite_rect(item).right
+                for item in self.ground_group
+                if item is not ground
             )
             self._recycle_ground(next_x)
         pipe_pair = self.pipe_pairs[0]
-        if not self.pipe_scored[0] and self.bird.rect.left > pipe_pair[0].rect.right:
+        if (
+            not self.pipe_scored[0]
+            and _sprite_rect(self.bird).left > _sprite_rect(pipe_pair[0]).right
+        ):
             self.pipe_scored[0] = True
             self.score += 1
             self.point_sound.play()
@@ -434,7 +458,7 @@ class Game:
                 pygame.sprite.collide_mask(self.bird, sprite)
                 for sprite in self.pipe_group
             )
-            or self.bird.rect.top <= _TOP_BOUNDARY
+            or _sprite_rect(self.bird).top <= _TOP_BOUNDARY
         )
         if not collision:
             return False
@@ -478,14 +502,20 @@ class Game:
         )
 
     def _draw_group(
-        self, group: pygame.sprite.AbstractGroup, flip: tuple[bool, bool]
+        self, group: pygame.sprite.AbstractGroup[_SpriteT], flip: tuple[bool, bool]
     ) -> None:
         flip_x, flip_y = flip
         for sprite in group:
-            image = sprite.draw_image() if isinstance(sprite, Bird) else sprite.image
+            if isinstance(sprite, Bird):
+                image = sprite.draw_image()
+            else:
+                image = sprite.image
+                if image is None:
+                    raise RuntimeError(_SPRITE_IMAGE_NOT_INITIALIZED)
             image = _flip_surface(image, flip)
-            x = self.screen_width - sprite.rect.right if flip_x else sprite.rect.left
-            y = self.screen_height - sprite.rect.bottom if flip_y else sprite.rect.top
+            rect = _sprite_rect(sprite)
+            x = self.screen_width - rect.right if flip_x else rect.left
+            y = self.screen_height - rect.bottom if flip_y else rect.top
             self.screen.blit(image, (x, y))
 
     def draw(self, time_scale: float, *, begin: bool) -> None:
@@ -501,7 +531,9 @@ class Game:
             if flip_y:
                 begin_rect.top = self.screen_height - begin_rect.bottom
             self.screen.blit(begin_image, begin_rect)
-            ground = min(self.ground_group, key=lambda sprite: sprite.rect.left)
+            ground = min(
+                self.ground_group, key=lambda sprite: _sprite_rect(sprite).left
+            )
             if self.is_off_screen(ground):
                 self._recycle_ground(self.ground_width - 20)
             self.bird.begin(time_scale)
@@ -566,7 +598,7 @@ class Game:
 
     def _detect_refresh_rate(self) -> int:
         try:
-            mode = pygame.display.get_desktop_display_mode()
+            mode = pygame.display.get_desktop_display_mode()  # ty: ignore[missing-attribute]
             if isinstance(mode, dict):
                 refresh = mode.get("refresh_rate") or mode.get("hz") or 0
             else:
