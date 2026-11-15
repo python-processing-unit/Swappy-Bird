@@ -137,12 +137,14 @@ class Game:
         self.speed_track, self.can_start = 0, True
         self.wing_path = resource_path("assets/audio/wing.wav")
         self.hit_path = resource_path("assets/audio/hit.wav")
+        self.point_path = resource_path("assets/audio/point.wav")
         self.bg_music = resource_path("assets/audio/the_hero_returns.ogg")
         self.game_over_music = self.wing_path
         pygame.mixer.init()
-        self.wing_sound, self.hit_sound = (
+        self.wing_sound, self.hit_sound, self.point_sound = (
             pygame.mixer.Sound(self.wing_path),
             pygame.mixer.Sound(self.hit_path),
+            pygame.mixer.Sound(self.point_path),
         )
         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
         pygame.display.set_caption("Swappy Bird")
@@ -262,6 +264,7 @@ class Game:
         if self.is_off_screen(pipes[0]):
             self.pipe_group.remove(*pipes[:2])
             self.score += 1
+            self.point_sound.play()
             if self.game_speed < 36:
                 self.speed_track += 1
                 if self.speed_track == 7:
