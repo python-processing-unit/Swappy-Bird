@@ -2,6 +2,7 @@ import os
 import pickle
 import random
 import sys
+from functools import cache, lru_cache
 
 import pygame
 import win32com.client
@@ -26,6 +27,28 @@ _base_path: str = getattr(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")),
 )
 _pickle_file = os.path.join(_base_path, "SAVE.pkl")
+_scrolling_assets: dict[
+    tuple[str, tuple[int, int], bool], tuple[pygame.Surface, pygame.mask.Mask]
+] = {}
+
+
+@cache
+def _font(size: int) -> pygame.font.Font:
+    return pygame.font.SysFont(None, size)
+
+
+@lru_cache(maxsize=256)
+def _render_text(text: str, size: int, color: tuple[int, int, int]) -> pygame.Surface:
+    return _font(size).render(text, True, color)
+
+
+@lru_cache(maxsize=256)
+def _flip_surface(
+    surface: pygame.Surface, flip_x: bool, flip_y: bool
+) -> pygame.Surface:
+    if not flip_x and not flip_y:
+        return surface
+    return pygame.transform.flip(surface, flip_x, flip_y)
 
 
 def resource_path(relative_path: str) -> str:
@@ -43,8 +66,15 @@ def draw_text(
     color: tuple[int, int, int],
     x: int,
     y: int,
+    flip_x: bool = False,
+    flip_y: bool = False,
 ) -> None:
-    screen.blit(pygame.font.SysFont(None, size).render(text, True, color), (x, y))
+    surface = _flip_surface(_render_text(text, size, color), flip_x, flip_y)
+    if flip_x:
+        x = screen.get_width() - x - surface.get_width()
+    if flip_y:
+        y = screen.get_height() - y - surface.get_height()
+    screen.blit(surface, (x, y))
 
 
 def load_high_score() -> int:
@@ -69,10 +99,11 @@ class Bird(pygame.sprite.Sprite):
             ).convert_alpha()
             for frame in ("upflap", "midflap", "downflap")
         ]
+        self.masks = [pygame.mask.from_surface(image) for image in self.images]
         self.speed: float = float(game.speed)
         self.current_image = 0
         self.image = self.images[0]
-        self.mask = pygame.mask.from_surface(self.image)
+        self.mask = self.masks[0]
         self.rect = self.image.get_rect(
             topleft=(game.screen_width // 6, game.screen_height // 2)
         )
@@ -86,7 +117,7 @@ class Bird(pygame.sprite.Sprite):
             self.animation_progress -= steps
             self.current_image = (self.current_image + steps) % len(self.images)
             self.image = self.images[self.current_image]
-            self.mask = pygame.mask.from_surface(self.image)
+            self.mask = self.masks[self.current_image]
 
     def update(self, time_scale: float) -> None:
         self.animate(time_scale)
@@ -113,17 +144,26 @@ class _ScrollingSprite(pygame.sprite.Sprite):
     ) -> None:
         super().__init__()
         self.game = game
-        image = pygame.image.load(resource_path(image_path)).convert_alpha()
-        self.image = pygame.transform.scale(image, size)
-        if inverted:
-            self.image = pygame.transform.flip(self.image, False, True)
+        asset_key = (image_path, size, inverted)
+        asset = _scrolling_assets.get(asset_key)
+        if asset is None:
+            image = pygame.image.load(resource_path(image_path)).convert_alpha()
+            scaled_image = pygame.transform.scale(image, size)
+            if inverted:
+                scaled_image = pygame.transform.flip(scaled_image, False, True)
+            asset = (scaled_image, pygame.mask.from_surface(scaled_image))
+            _scrolling_assets[asset_key] = asset
+        self.image, self.mask = asset
         self.rect = self.image.get_rect(topleft=(xpos, ypos))
         self.position_x = float(xpos)
-        self.mask = pygame.mask.from_surface(self.image)
 
     def update(self, time_scale: float) -> None:
         self.position_x -= self.game.game_speed * time_scale
         self.rect.x = int(self.position_x)
+
+    def set_position(self, xpos: int, ypos: int) -> None:
+        self.position_x = float(xpos)
+        self.rect.topleft = (xpos, ypos)
 
 
 class Game:
@@ -165,12 +205,11 @@ class Game:
         self.ground_group = pygame.sprite.Group(
             *(self.Ground(self, self.ground_width * i) for i in range(2))
         )
+        self.pipe_pairs = [
+            self.get_random_pipes(self.screen_width * i + 800) for i in range(2)
+        ]
         self.pipe_group = pygame.sprite.Group(
-            *(
-                pipe
-                for i in range(2)
-                for pipe in self.get_random_pipes(self.screen_width * i + 800)
-            )
+            *(pipe for pair in self.pipe_pairs for pipe in pair)
         )
         pygame.event.clear()
         pygame.display.set_icon(
@@ -212,6 +251,12 @@ class Game:
             self.Pipe(self, True, xpos, self.screen_height - size - self.pipe_gap),
         )
 
+    def _recycle_ground(self, xpos: int) -> None:
+        ground = next(iter(self.ground_group))
+        self.ground_group.remove(ground)
+        ground.set_position(xpos, self.screen_height - self.ground_height)
+        self.ground_group.add(ground)
+
     def handle_events(self, begin: bool) -> set[str]:
         logical: set[str] = set()
         for event in pygame.event.get():
@@ -241,9 +286,7 @@ class Game:
         paused = not paused
         if paused:
             pygame.mixer.music.pause()
-            surface = pygame.font.SysFont(None, 72).render(
-                "Paused", True, (255, 255, 255)
-            )
+            surface = _render_text("Paused", 72, (255, 255, 255))
             rect = surface.get_rect(
                 center=(self.screen_width // 2, self.screen_height // 2)
             )
@@ -254,15 +297,15 @@ class Game:
         return paused
 
     def update(self, time_scale: float) -> bool:
-        ground = self.ground_group.sprites()[0]
+        ground = next(iter(self.ground_group))
         if self.is_off_screen(ground):
-            self.ground_group.remove(ground)
-            self.ground_group.add(
-                self.Ground(self, self.ground_group.sprites()[-1].rect.right)
+            next_x = max(
+                item.rect.right for item in self.ground_group if item is not ground
             )
-        pipes = self.pipe_group.sprites()
-        if self.is_off_screen(pipes[0]):
-            self.pipe_group.remove(*pipes[:2])
+            self._recycle_ground(next_x)
+        pipe_pair = self.pipe_pairs[0]
+        if self.is_off_screen(pipe_pair[0]):
+            self.pipe_pairs.append(self.pipe_pairs.pop(0))
             self.score += 1
             self.point_sound.play()
             if self.game_speed < 36:
@@ -271,24 +314,24 @@ class Game:
                     self.speed_track = 0
                     self.game_speed += 1
                     self.pipe_gap -= 2
-            self.pipe_group.add(*self.get_random_pipes(self.screen_width * 2))
+            size = random.randint(100, 300)
+            xpos = self.screen_width * 2
+            pipe_pair[0].set_position(xpos, self.screen_height - size)
+            pipe_pair[1].set_position(
+                xpos,
+                -(self.pipe_height - (self.screen_height - size - self.pipe_gap)),
+            )
         for group in (self.bird_group, self.ground_group, self.pipe_group):
             group.update(time_scale)
         self.high_score = max(self.high_score, self.score)
         collision = (
-            pygame.sprite.groupcollide(
-                self.bird_group,
-                self.ground_group,
-                False,
-                False,
-                pygame.sprite.collide_mask,
+            any(
+                pygame.sprite.collide_mask(self.bird, sprite)
+                for sprite in self.ground_group
             )
-            or pygame.sprite.groupcollide(
-                self.bird_group,
-                self.pipe_group,
-                False,
-                False,
-                pygame.sprite.collide_mask,
+            or any(
+                pygame.sprite.collide_mask(self.bird, sprite)
+                for sprite in self.pipe_group
             )
             or self.bird.rect.top <= -5
         )
@@ -297,9 +340,7 @@ class Game:
         self.can_start = False
         self.hit_sound.play()
         save_high_score(self.high_score)
-        text = pygame.font.SysFont(None, 72).render(
-            "You are warned", True, (255, 255, 255)
-        )
+        text = _render_text("You are warned", 72, (255, 255, 255))
         rect = text.get_rect(center=(self.screen_width // 2, self.screen_height // 2))
         flip_x, flip_y = (
             self.score > 0 and self.score // 7 % 2 != 0,
@@ -317,7 +358,13 @@ class Game:
         return True
 
     def _draw_score(
-        self, label: str, value: int, color: tuple[int, int, int], x: int
+        self,
+        label: str,
+        value: int,
+        color: tuple[int, int, int],
+        x: int,
+        flip_x: bool,
+        flip_y: bool,
     ) -> None:
         if value < 10:
             value_text = f"00{value}"
@@ -325,36 +372,57 @@ class Game:
             value_text = f"0{value}"
         else:
             value_text = str(value)
-        draw_text(self.screen, f"{label}: {value_text}", 32, color, x, 10)
+        draw_text(
+            self.screen, f"{label}: {value_text}", 32, color, x, 10, flip_x, flip_y
+        )
+
+    def _draw_group(
+        self, group: pygame.sprite.AbstractGroup, flip_x: bool, flip_y: bool
+    ) -> None:
+        for sprite in group:
+            image = _flip_surface(sprite.image, flip_x, flip_y)
+            x = self.screen_width - sprite.rect.right if flip_x else sprite.rect.left
+            y = self.screen_height - sprite.rect.bottom if flip_y else sprite.rect.top
+            self.screen.blit(image, (x, y))
 
     def draw(self, begin: bool, time_scale: float) -> None:
-        self.screen.blit(self.background, (0, 0))
+        flip_x = not begin and self.score > 0 and self.score // 7 % 2 != 0
+        flip_y = not begin and self.score > 0 and self.score // 14 % 2 != 0
+        self.screen.blit(_flip_surface(self.background, flip_x, flip_y), (0, 0))
         if begin:
-            self.screen.blit(self.begin_image, (120, 150))
-            ground = self.ground_group.sprites()[0]
+            begin_image = _flip_surface(self.begin_image, flip_x, flip_y)
+            begin_rect = self.begin_image.get_rect(topleft=(120, 150))
+            if flip_x:
+                begin_rect.left = self.screen_width - begin_rect.right
+            if flip_y:
+                begin_rect.top = self.screen_height - begin_rect.bottom
+            self.screen.blit(begin_image, begin_rect)
+            ground = next(iter(self.ground_group))
             if self.is_off_screen(ground):
-                self.ground_group.remove(ground)
-                self.ground_group.add(self.Ground(self, self.ground_width - 20))
+                self._recycle_ground(self.ground_width - 20)
             self.bird.begin(time_scale)
             self.ground_group.update(time_scale)
-        self.bird_group.draw(self.screen)
+        self._draw_group(self.bird_group, flip_x, flip_y)
         if not begin:
-            self.pipe_group.draw(self.screen)
-        self.ground_group.draw(self.screen)
+            self._draw_group(self.pipe_group, flip_x, flip_y)
+        self._draw_group(self.ground_group, flip_x, flip_y)
         if not begin:
             self._draw_score(
                 "Score",
                 self.score,
                 (255, 255, 0) if self.score > self.old_high_score else (255, 255, 255),
                 10,
+                flip_x,
+                flip_y,
             )
-            self._draw_score("High Score", self.high_score, (255, 255, 255), 825)
-            flipped = self.screen
-            if self.score > 0 and self.score // 7 % 2:
-                flipped = pygame.transform.flip(flipped, True, False)
-            if self.score > 0 and self.score // 14 % 2:
-                flipped = pygame.transform.flip(flipped, False, True)
-            self.screen.blit(flipped, (0, 0))
+            self._draw_score(
+                "High Score",
+                self.high_score,
+                (255, 255, 255),
+                825,
+                flip_x,
+                flip_y,
+            )
         pygame.display.update()
 
     def _quit_requested(self, logical: set[str]) -> bool:
