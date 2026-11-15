@@ -208,6 +208,7 @@ class Game:
         self.pipe_pairs = [
             self.get_random_pipes(self.screen_width * i + 800) for i in range(2)
         ]
+        self.pipe_scored = [False, False]
         self.pipe_group = pygame.sprite.Group(
             *(pipe for pair in self.pipe_pairs for pipe in pair)
         )
@@ -304,8 +305,8 @@ class Game:
             )
             self._recycle_ground(next_x)
         pipe_pair = self.pipe_pairs[0]
-        if self.is_off_screen(pipe_pair[0]):
-            self.pipe_pairs.append(self.pipe_pairs.pop(0))
+        if not self.pipe_scored[0] and self.bird.rect.left > pipe_pair[0].rect.right:
+            self.pipe_scored[0] = True
             self.score += 1
             self.point_sound.play()
             if self.game_speed < 36:
@@ -314,6 +315,10 @@ class Game:
                     self.speed_track = 0
                     self.game_speed += 1
                     self.pipe_gap -= 2
+        if self.is_off_screen(pipe_pair[0]):
+            self.pipe_pairs.append(self.pipe_pairs.pop(0))
+            self.pipe_scored.append(self.pipe_scored.pop(0))
+            self.pipe_scored[-1] = False
             size = random.randint(100, 300)
             xpos = self.screen_width * 2
             pipe_pair[0].set_position(xpos, self.screen_height - size)
