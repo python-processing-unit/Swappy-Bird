@@ -1,2 +1,6 @@
 SAVE.pkl
 **/__pycache__/
+dist/
+build/
+*.spec
+*.exe
