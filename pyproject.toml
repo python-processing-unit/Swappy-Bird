@@ -8,7 +8,11 @@ version = "0.0.0"
 requires-python = "==3.13.*"
 dependencies = [
   "pygame-ce>=2.0.0",
-  "pywin32==312",
+  "pywin32==312"
+]
+
+[dependency-groups]
+dev = [
   "ruff>=0.17.0",
   "pyinstaller>=6.0.0",
   "pillow>=13.0.0"

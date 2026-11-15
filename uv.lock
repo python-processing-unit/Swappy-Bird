@@ -174,18 +174,26 @@ name = "swappy-bird"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
-    { name = "pillow" },
     { name = "pygame-ce" },
-    { name = "pyinstaller" },
     { name = "pywin32" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pillow" },
+    { name = "pyinstaller" },
     { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "pillow", specifier = ">=13.0.0" },
     { name = "pygame-ce", specifier = ">=2.0.0" },
-    { name = "pyinstaller", specifier = ">=6.0.0" },
     { name = "pywin32", specifier = "==312" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pillow", specifier = ">=13.0.0" },
+    { name = "pyinstaller", specifier = ">=6.0.0" },
     { name = "ruff", specifier = ">=0.17.0" },
 ]
