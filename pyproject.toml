@@ -10,7 +10,8 @@ dependencies = [
   "pygame-ce>=2.0.0",
   "pywin32==312",
   "ruff>=0.17.0",
-  "pyinstaller>=6.0.0"
+  "pyinstaller>=6.0.0",
+  "pillow>=13.0.0"
 ]
 
 [project.scripts]
