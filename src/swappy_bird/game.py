@@ -100,6 +100,11 @@ class Bird(pygame.sprite.Sprite):
             for frame in ("upflap", "midflap", "downflap")
         ]
         self.masks = [pygame.mask.from_surface(image) for image in self.images]
+        self.flash_images: list[pygame.Surface] = [
+            mask.to_surface(setcolor=(255, 255, 0, 255), unsetcolor=(0, 0, 0, 0))
+            for mask in self.masks
+        ]
+        self.flash_until = 0
         self.speed: float = float(game.speed)
         self.current_image = 0
         self.image = self.images[0]
@@ -130,6 +135,14 @@ class Bird(pygame.sprite.Sprite):
 
     def begin(self, time_scale: float) -> None:
         self.animate(time_scale)
+
+    def flash(self) -> None:
+        self.flash_until = pygame.time.get_ticks() + 30
+
+    def draw_image(self) -> pygame.Surface:
+        if pygame.time.get_ticks() < self.flash_until:
+            return self.flash_images[self.current_image]
+        return self.image
 
 
 class _ScrollingSprite(pygame.sprite.Sprite):
@@ -309,6 +322,7 @@ class Game:
             self.pipe_scored[0] = True
             self.score += 1
             self.point_sound.play()
+            self.bird.flash()
             if self.game_speed < 36:
                 self.speed_track += 1
                 if self.speed_track == 7:
@@ -385,7 +399,8 @@ class Game:
         self, group: pygame.sprite.AbstractGroup, flip_x: bool, flip_y: bool
     ) -> None:
         for sprite in group:
-            image = _flip_surface(sprite.image, flip_x, flip_y)
+            image = sprite.draw_image() if isinstance(sprite, Bird) else sprite.image
+            image = _flip_surface(image, flip_x, flip_y)
             x = self.screen_width - sprite.rect.right if flip_x else sprite.rect.left
             y = self.screen_height - sprite.rect.bottom if flip_y else sprite.rect.top
             self.screen.blit(image, (x, y))
