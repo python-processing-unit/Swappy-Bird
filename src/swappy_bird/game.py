@@ -52,6 +52,25 @@ def _enable_monochrome(game: "Game") -> None:
     game.monochrome = True
 
 
+def _enable_potato_mode(game: "Game") -> None:
+    bird = game.bird
+    image = pygame.image.load(
+        resource_path("assets/sprites/potato.png")
+    ).convert_alpha()
+    bird.images = [image, image, image]
+    bird.masks = [pygame.mask.from_surface(image) for _ in bird.images]
+    bird.flash_images = [
+        mask.to_surface(setcolor=(255, 255, 0, 255), unsetcolor=(0, 0, 0, 0))
+        for mask in bird.masks
+    ]
+    bird.current_image = 0
+    bird.image = image
+    bird.mask = bird.masks[0]
+    rect = image.get_rect(topleft=_sprite_rect(bird).topleft)
+    bird.rect = rect
+    bird.position_y = float(rect.y)
+
+
 @cache
 def _font(size: int) -> pygame.font.Font:
     return pygame.font.SysFont(None, size)
@@ -262,6 +281,7 @@ class Game:
     CHEAT_CODES: ClassVar[dict[str, Callable[["Game"], None]]] = {
         "FAST": _enable_fast_mode,
         "MONO": _enable_monochrome,
+        "POTATO": _enable_potato_mode,
     }
 
     def __init__(self) -> None:
