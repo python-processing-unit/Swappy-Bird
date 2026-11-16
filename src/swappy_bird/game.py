@@ -48,6 +48,10 @@ def _enable_fast_mode(game: "Game") -> None:
     game.game_speed, game.pipe_gap = 35, 120
 
 
+def _enable_monochrome(game: "Game") -> None:
+    game.monochrome = True
+
+
 @cache
 def _font(size: int) -> pygame.font.Font:
     return pygame.font.SysFont(None, size)
@@ -256,7 +260,8 @@ class Game:
     """Owns game state, the event loop, rendering, and menu cheat codes."""
 
     CHEAT_CODES: ClassVar[dict[str, Callable[["Game"], None]]] = {
-        "FAST": _enable_fast_mode
+        "FAST": _enable_fast_mode,
+        "MONO": _enable_monochrome,
     }
 
     def __init__(self) -> None:
@@ -266,6 +271,7 @@ class Game:
         self.ground_width, self.ground_height = 2 * self.screen_width, 100
         self.pipe_width, self.pipe_height, self.pipe_gap = 80, 500, 150
         self.score = 0
+        self.monochrome = False
         self._cheat_code_buffer = ""
         self.score_flash_until = 0
         self.high_score = self.old_high_score = load_high_score()
@@ -447,7 +453,7 @@ class Game:
                 center=(self.screen_width // 2, self.screen_height // 2)
             )
             self.screen.blit(surface, rect)
-            pygame.display.update()
+            self._present()
         else:
             pygame.mixer.music.unpause()
         return paused
@@ -517,7 +523,7 @@ class Game:
         self.screen.blit(text, rect)
         pygame.mixer.music.load(self.game_over_music)
         pygame.mixer.music.play(1)
-        pygame.display.update()
+        self._present()
         speech = "denraw era uoY" if flip_x else "You are warned"
         win32com.client.Dispatch("SAPI.SpVoice").Speak(speech)
         self.can_start = True
@@ -562,6 +568,11 @@ class Game:
             y = self.screen_height - rect.bottom if flip_y else rect.top
             self.screen.blit(image, (x, y))
 
+    def _present(self) -> None:
+        if self.monochrome:
+            self.screen.blit(pygame.transform.grayscale(self.screen), (0, 0))
+        pygame.display.update()
+
     def draw(self, time_scale: float, *, begin: bool) -> None:
         """Draw the current frame to the display."""
         flip_x, flip_y = self._screen_flip_state() if not begin else (False, False)
@@ -605,7 +616,7 @@ class Game:
             825,
             (flip_x, flip_y),
         )
-        pygame.display.update()
+        self._present()
 
     def _quit_requested(self, logical: set[str]) -> bool:
         if "quit" not in logical and "quit_immediate" not in logical:
