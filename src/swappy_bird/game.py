@@ -258,6 +258,7 @@ class Game:
         self.ground_width, self.ground_height = 2 * self.screen_width, 100
         self.pipe_width, self.pipe_height, self.pipe_gap = 80, 500, 150
         self.score = 0
+        self.score_flash_until = 0
         self.high_score = self.old_high_score = load_high_score()
         self.speed_track, self.can_start = 0, True
         self.wing_path = resource_path("assets/audio/wing.wav")
@@ -426,6 +427,7 @@ class Game:
         ):
             self.pipe_scored[0] = True
             self.score += 1
+            self.score_flash_until = pygame.time.get_ticks() + 30
             self.point_sound.play()
             self.bird.flash()
             if self.game_speed < _MAX_GAME_SPEED:
@@ -545,7 +547,12 @@ class Game:
         self._draw_score(
             "Score",
             self.score,
-            (255, 255, 0) if self.score > self.old_high_score else (255, 255, 255),
+            (
+                (255, 255, 0)
+                if pygame.time.get_ticks() < self.score_flash_until
+                or self.score > self.old_high_score
+                else (255, 255, 255)
+            ),
             10,
             (flip_x, flip_y),
         )
