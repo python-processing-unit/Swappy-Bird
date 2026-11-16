@@ -540,19 +540,52 @@ class Game:
         self.can_start = False
         self.hit_sound.play()
         save_high_score(self.high_score)
+        self._show_game_over()
+        self.can_start = True
+        return True
+
+    def _show_game_over(self) -> None:
+        """Display and announce the game-over message."""
         text = _render_text("You are warned", 72, (255, 255, 255))
-        rect = text.get_rect(center=(self.screen_width // 2, self.screen_height // 2))
         flip_x, flip_y = self._screen_flip_state()
+        prompt = (
+            "Enter POTATO on the home screen"
+            if self.score >= _SCORE_HUNDREDS_LIMIT
+            else None
+        )
+        if prompt is not None:
+            text_rect = text.get_rect(
+                center=(
+                    self.screen_width // 2,
+                    self.screen_height // 2 + (30 if flip_y else -30),
+                )
+            )
+            prompt_surface = _render_text(prompt, 36, (255, 255, 255))
+            prompt_rect = prompt_surface.get_rect(
+                center=(
+                    self.screen_width // 2,
+                    self.screen_height // 2 + (-40 if flip_y else 40),
+                )
+            )
+            if flip_x or flip_y:
+                prompt_surface = pygame.transform.flip(prompt_surface, flip_x, flip_y)
+            self.screen.blit(prompt_surface, prompt_rect)
+        else:
+            text_rect = text.get_rect(
+                center=(self.screen_width // 2, self.screen_height // 2)
+            )
         if flip_x or flip_y:
             text = pygame.transform.flip(text, flip_x, flip_y)
-        self.screen.blit(text, rect)
+        self.screen.blit(text, text_rect)
         pygame.mixer.music.load(self.game_over_music)
         pygame.mixer.music.play(1)
         self._present()
-        speech = "denraw era uoY" if flip_x else "You are warned"
+        speech = "You are warned"
+        if prompt is not None:
+            speech += f". {prompt}."
+        if flip_x:
+            speech = speech[::-1]
         win32com.client.Dispatch("SAPI.SpVoice").Speak(speech)
-        self.can_start = True
-        return True
 
     def _draw_score(
         self,
