@@ -58,6 +58,10 @@ def _enable_potato_mode(game: "Game") -> None:
         resource_path("assets/sprites/potato.png")
     ).convert_alpha()
     pygame.display.set_icon(image)
+    pygame.display.set_caption("Swappy Potato")
+    game.begin_image = pygame.image.load(
+        resource_path("assets/sprites/potato_message.png")
+    ).convert_alpha()
     bird.images = [image, image, image]
     bird.masks = [pygame.mask.from_surface(image) for _ in bird.images]
     bird.flash_images = [
