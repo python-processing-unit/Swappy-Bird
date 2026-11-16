@@ -3,14 +3,14 @@
 import pickletools
 import random
 import sys
+from collections.abc import Callable
 from functools import cache, lru_cache
 from pathlib import Path
-from typing import TypeVar, override
+from typing import ClassVar, TypeVar, override
 
 import pygame
 import win32com.client
 from pygame.locals import (
-    K_DOWN,
     K_EQUALS,
     K_ESCAPE,
     K_SPACE,
@@ -42,6 +42,10 @@ _UNSUPPORTED_LEGACY_SCORE = "Unsupported legacy high-score data"
 _SPRITE_IMAGE_NOT_INITIALIZED = "Sprite image has not been initialized"
 _SPRITE_RECT_NOT_INITIALIZED = "Sprite rect has not been initialized"
 _SpriteT = TypeVar("_SpriteT", bound=pygame.sprite.Sprite)
+
+
+def _enable_fast_mode(game: "Game") -> None:
+    game.game_speed, game.pipe_gap = 35, 120
 
 
 @cache
@@ -249,7 +253,11 @@ def _sprite_rect(sprite: pygame.sprite.Sprite) -> pygame.Rect:
 
 
 class Game:
-    """Owns the game state, event loop, and rendering."""
+    """Owns game state, the event loop, rendering, and menu cheat codes."""
+
+    CHEAT_CODES: ClassVar[dict[str, Callable[["Game"], None]]] = {
+        "FAST": _enable_fast_mode
+    }
 
     def __init__(self) -> None:
         """Initialize game state, assets, audio, and the display."""
@@ -258,6 +266,7 @@ class Game:
         self.ground_width, self.ground_height = 2 * self.screen_width, 100
         self.pipe_width, self.pipe_height, self.pipe_gap = 80, 500, 150
         self.score = 0
+        self._cheat_code_buffer = ""
         self.score_flash_until = 0
         self.high_score = self.old_high_score = load_high_score()
         self.speed_track, self.can_start = 0, True
@@ -367,17 +376,52 @@ class Game:
         ground.set_position(xpos, self.screen_height - self.ground_height)
         self.ground_group.add(ground)
 
-    def handle_events(self) -> set[str]:
+    def _handle_cheat_text(self, text: str) -> None:
+        """Match printable home-screen input against registered cheat codes."""
+        codes = {
+            code.casefold(): callback
+            for code, callback in self.CHEAT_CODES.items()
+            if code
+        }
+        if not codes:
+            self._cheat_code_buffer = ""
+
+        max_code_length = max(map(len, codes))
+        for character in text.casefold():
+            if not character.isprintable():
+                continue
+            self._cheat_code_buffer += character
+            matched_code = next(
+                (code for code in codes if self._cheat_code_buffer.endswith(code)),
+                None,
+            )
+            if matched_code is not None:
+                self._cheat_code_buffer = ""
+                codes[matched_code](self)
+                continue
+
+            self._cheat_code_buffer = self._cheat_code_buffer[-max_code_length:]
+            for length in range(len(self._cheat_code_buffer), 0, -1):
+                suffix = self._cheat_code_buffer[-length:]
+                if any(code.startswith(suffix) for code in codes):
+                    self._cheat_code_buffer = suffix
+                    break
+            else:
+                self._cheat_code_buffer = ""
+
+    def handle_events(self, *, begin: bool = False) -> set[str]:
         """Translate pygame events into logical game actions."""
         logical: set[str] = set()
+        if not begin:
+            self._cheat_code_buffer = ""
         for event in pygame.event.get():
             if event.type == QUIT:
                 logical.add("quit")
             elif event.type == KEYDOWN:
+                if begin:
+                    self._handle_cheat_text(event.unicode)
                 if event.key in (K_SPACE, K_UP, K_w):
                     logical.add("up")
-                if event.key == K_DOWN:
-                    logical.add("down")
                 if event.key in (K_q, K_x, K_ESCAPE):
                     logical.add("quit_immediate")
                 if event.key == K_EQUALS or (
@@ -393,8 +437,6 @@ class Game:
         if "up" in logical and (not begin or self.can_start):
             self.bird.bump()
             self.wing_sound.play()
-        if "down" in logical and begin:
-            self.game_speed, self.pipe_gap = 35, 120
         if begin or "pause" not in logical:
             return paused
         paused = not paused
@@ -578,7 +620,7 @@ class Game:
         begin, paused = True, False
         while True:
             dt = self.clock.tick(10 if paused else self.target_fps) / 1000
-            logical = self.handle_events()
+            logical = self.handle_events(begin=begin)
             if self._quit_requested(logical):
                 return False
             if paused:
